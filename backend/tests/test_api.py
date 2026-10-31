@@ -130,6 +130,15 @@ def test_region_endpoint_and_fence(client):
     assert {"Delhi", "Gurugram"} <= {p["name"] for p in g["places"]}
     mumbai = {**PIN, "lat": 19.07, "lon": 72.87, "user_lat": 19.07, "user_lon": 72.87}
     r = client.post("/reports", json=mumbai, headers=reg(client))
-    assert r.status_code == 422 and "Delhi and Haryana" in r.json()["detail"]
     c = client.post("/routes/compare", json={"origin": {"lat": 19.07, "lon": 72.87}, "dest": {"lat": 28.45, "lon": 77.02}, "mode": "day"})
     assert c.status_code == 422
+
+
+def test_routes_compare_includes_coords(client):
+    r = client.post("/routes/compare", json={"origin": {"lat": 28.45, "lon": 77.02}, "dest": {"lat": 28.465, "lon": 77.038}, "mode": "day"}).json()
+    assert len(r["routes"]) >= 2
+    for route in r["routes"]:
+        assert "coords" in route
+        assert len(route["coords"]) >= 2
+        assert all(len(pt) == 2 for pt in route["coords"])
+

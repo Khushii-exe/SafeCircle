@@ -195,11 +195,27 @@ def segment_inputs(db, seg, length_m=None):
             "I": cfg.i_unknown if seg.isolation is None else seg.isolation}
 
 
+def _route_coords(seg_ids, segs):
+    coords = []
+    for sid in seg_ids:
+        if sid in segs and segs[sid].geom:
+            for pt in segs[sid].geom:
+                if not coords or coords[-1] != pt:
+                    coords.append(pt)
+    return coords
+
+
 def candidate_routes(db, origin, dest):
     segs = {s.id: s for s in db.scalars(select(Segment))}
     if not cfg.osrm_url:  # demo mode: seeded synthetic routes
-        return [{"id": r["id"], "name": r["name"], "minutes": r["minutes"], "km": r["km"],
-                 "parts": [segment_inputs(db, segs[i]) for i in r["segments"] if i in segs]} for r in DEMO_ROUTES], "demo"
+        return [{
+            "id": r["id"],
+            "name": r["name"],
+            "minutes": r["minutes"],
+            "km": r["km"],
+            "coords": _route_coords(r["segments"], segs),
+            "parts": [segment_inputs(db, segs[i]) for i in r["segments"] if i in segs]
+        } for r in DEMO_ROUTES], "demo"
     from .routing import map_to_segments, osrm_routes
     out = []
     for i, x in enumerate(osrm_routes(cfg.osrm_url, origin, dest)):
@@ -208,7 +224,7 @@ def candidate_routes(db, origin, dest):
         if unmapped:
             parts.append({"id": "unmapped", "name": "Unmapped road", "length_m": unmapped, "S": cfg.s_values["no_data"], "state": "no_data",
                           "N": cfg.n_unknown, "N_measured": False, "I": cfg.i_unknown})
-        out.append({"id": f"R{i + 1}", "name": f"Route {chr(65 + i)}", "minutes": x["minutes"], "km": x["km"], "parts": parts})
+        out.append({"id": f"R{i + 1}", "name": f"Route {chr(65 + i)}", "minutes": x["minutes"], "km": x["km"], "coords": x["coords"], "parts": parts})
     return out, "osrm"
 
 
