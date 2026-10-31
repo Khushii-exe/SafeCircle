@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: sqlite:////data/safecircle.db   # swap for postgresql+psycopg://... once PostGIS is added
+      SECRET_KEY: change-me
+      ADMIN_KEY: change-me-too
+      SEED_DEMO: "1"            # synthetic demo data; set 0 for real pilot data
+      # OSRM_URL: http://osrm:5000   # uncomment after you build an OSRM extract (see README)
+    volumes: ["data:/data"]
+volumes:
+  data:

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeCircle moderation console</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--ink:#1F1B55;--body:#2A3F6E;--accent:#2E73B0;--navy:#243F7F;--amber:#F5A83D;--red:#C62828;--glass:rgba(255,255,255,.62);--line:rgba(255,255,255,.9)}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:linear-gradient(155deg,#E3F4FA,#B0DCEB 35%,#8FD0E8 70%,#6EC0DC);min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px}
+h1{font-size:20px;margin:0}h2{font-size:15px;margin:0 0 8px}
+.wrap{display:grid;grid-template-columns:380px 1fr;gap:16px;padding:0 20px 20px;height:calc(100vh - 64px)}
+.card{background:var(--glass);border:1px solid var(--line);border-radius:20px;padding:14px;backdrop-filter:blur(14px)}
+.col{display:flex;flex-direction:column;gap:12px;overflow:auto;min-height:0}
+#map{border-radius:20px;border:1px solid var(--line);min-height:300px}
+button{font:inherit;font-weight:700;border-radius:999px;border:1.5px solid var(--ink);background:#fff9;color:var(--ink);padding:0 16px;min-height:44px;cursor:pointer}
+button.p{background:var(--ink);color:#fff}button.d{background:var(--red);border-color:var(--red);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,textarea{font:inherit;width:100%;border:1px solid #6E8FB5;border-radius:12px;padding:10px;background:#fffa;min-height:44px}
+.item{display:block;width:100%;text-align:left;border-radius:14px;padding:10px 12px;margin-bottom:6px;min-height:0;font-weight:600}
+.item.sel{outline:3px solid var(--accent)}
+.badge{display:inline-block;font-size:12px;font-weight:800;padding:2px 10px;border-radius:999px;color:#fff}
+.b-red{background:var(--red)}.b-amber{background:#8A4B00}.b-pend{background:var(--navy)}
+.sm{font-size:13px;color:var(--body);line-height:1.4}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:6px 4px;border-bottom:1px solid #1F1B5522;vertical-align:top}
+.err{color:var(--red);font-weight:700}
+@media(max-width:900px){.wrap{grid-template-columns:1fr;height:auto}#map{height:360px}}
+</style>
+</head>
+<body>
+<header><h1>SafeCircle moderation console</h1><div><span id="who" class="sm"></span> <button id="out" hidden>Sign out</button></div></header>
+<div class="wrap">
+  <div class="col">
+    <div class="card"><h2>Pilot area: <span id="rname">loading</span></h2><div id="places" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>
+    <div class="card" id="login">
+      <h2>Staff sign-in (development)</h2>
+      <label class="sm" for="key">Admin key</label>
+      <input id="key" type="password" autocomplete="off">
+      <p class="sm">Temporary sign-in using the server's admin key. It is replaced by real staff login in the login step.</p>
+      <button class="p" id="go">Sign in as moderator</button>
+      <div id="lerr" class="err"></div>
+    </div>
+    <div class="card" id="queue" hidden><h2>Needs review</h2><div id="qlist"></div></div>
+    <div class="card" id="flagged" hidden><h2>All flagged places</h2><div id="flist"></div></div>
+    <div class="card" id="detail" hidden>
+      <h2 id="dname"></h2><div id="dmeta" class="sm"></div>
+      <table><thead><tr><th>Concern</th><th>When</th><th>Age</th><th>Weight</th><th>Counted</th></tr></thead><tbody id="rows"></tbody></table>
+      <p class="sm">Notes are volunteered by users and unverified. No user identities are shown.</p>
+      <label class="sm" for="reason">Reason (required, saved in the audit log)</label>
+      <textarea id="reason" rows="2" maxlength="200"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="d" id="confirm">Confirm red</button><button id="dismiss">Dismiss (false or abusive)</button><button id="resolve">Mark fixed</button>
+      </div>
+      <div id="aerr" class="err"></div>
+      <h2 style="margin-top:12px">History</h2><div id="hist" class="sm"></div>
+    </div>
+  </div>
+  <div id="map" role="application" aria-label="Map of reported places"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let token = sessionStorage.getItem('sc_tok'), selected = null;
+const map = L.map('map', {minZoom: 7}).setView([28.50, 77.05], 10);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+fetch('/region').then(r => r.json()).then(g => {
+  const b = g.bbox; map.setMaxBounds([[b.south, b.west], [b.north, b.east]]); map.setView([g.center.lat, g.center.lon], g.zoom);
+  $('rname').textContent = g.name;
+  $('places').replaceChildren(...g.places.map(p => { const x = el('button', p.name); x.style.minHeight = '36px'; x.onclick = () => map.setView([p.lat, p.lon], 13); return x; }));
+}).catch(() => { $('rname').textContent = 'unavailable'; });
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {})}});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { if (r.status === 401) signOut(); throw new Error(typeof j.detail === 'string' ? j.detail : 'Request failed (' + r.status + ')'); }
+  return j;
+}
+function el(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+function badge(state, pending) {
+  const b = el('span', pending ? 'needs review' : state, 'badge ' + (pending ? 'b-pend' : state === 'red' ? 'b-red' : 'b-amber')); return b;
+}
+function item(s) {
+  const b = el('button', '', 'item' + (selected === s.segment_id ? ' sel' : ''));
+  b.append(el('div', s.name || s.segment_id), badge(s.state, s.pending_review), el('span', '  score ' + s.score + ' | ' + s.distinct_users + ' users', 'sm'));
+  b.onclick = () => select(s.segment_id); return b;
+}
+async function refresh() {
+  const [q, f, o] = await Promise.all([api('/mod/queue'), api('/mod/segments'), api('/overlays')]);
+  const pend = new Set(q.map(x => x.segment_id));
+  $('qlist').replaceChildren(...(q.length ? f.filter(x => pend.has(x.segment_id)).map(item) : [el('p', 'Nothing waiting for review.', 'sm')]));
+  $('flist').replaceChildren(...(f.length ? f.map(item) : [el('p', 'No flagged places yet.', 'sm')]));
+  layer.clearLayers();
+  for (const s of o.segments) {
+    if (s.signal === 'weak' || s.signal === 'none') L.polyline(s.geom, {color: '#243F7F', weight: 14, opacity: s.signal === 'none' ? .55 : .3}).addTo(layer);
+    if (s.signal === null) L.polyline(s.geom, {color: '#000', weight: 3, opacity: .55, dashArray: '2 6'}).addTo(layer);
+  }
+  for (const s of o.segments) {
+    if (s.concern === 'no_data') continue;
+    L.polyline(s.geom, {color: s.concern === 'red' ? '#C62828' : '#F5A83D', weight: selected === s.segment_id ? 10 : 6}).on('click', () => select(s.segment_id)).addTo(layer);
+  }
+}
+async function select(id) {
+  selected = id;
+  try {
+    const d = await api('/mod/segments/' + encodeURIComponent(id));
+    $('detail').hidden = false; $('aerr').textContent = '';
+    $('dname').textContent = d.name || d.segment_id;
+    $('dmeta').replaceChildren(badge(d.state, d.pending_review), document.createTextNode('  score ' + d.score + ' | ' + d.distinct_users + ' distinct users'));
+    $('rows').replaceChildren(...d.reports.map(r => { const tr = el('tr'); [r.category.replace('_', ' '), r.time_bucket, r.age_days + ' d', r.weight, r.counted ? 'yes' : 'no'].forEach(v => tr.append(el('td', v))); if (r.note) { const n = el('tr'); const c = el('td', 'Note: ' + r.note, 'sm'); c.colSpan = 5; n.append(c); return [tr, n]; } return [tr]; }).flat());
+    $('hist').replaceChildren(...(d.history.length ? d.history.map(h => el('div', h.at.slice(0, 16).replace('T', ' ') + ' UTC: ' + h.action + (h.reason ? ' (' + h.reason + ')' : ''))) : [el('div', 'No moderation actions yet.')]));
+    $('confirm').disabled = !d.pending_review;
+    const seg = d.segment_id; await refresh(); selected = seg;
+  } catch (e) { $('aerr').textContent = e.message; }
+}
+async function act(action) {
+  const reason = $('reason').value.trim();
+  if (reason.length < 3) { $('aerr').textContent = 'Enter a reason (at least 3 characters).'; return; }
+  try {
+    await api('/mod/segments/' + encodeURIComponent(selected), {method: 'POST', body: JSON.stringify({action, reason})});
+    $('reason').value = ''; await select(selected);
+  } catch (e) { $('aerr').textContent = e.message; }
+}
+$('confirm').onclick = () => act('confirm'); $('dismiss').onclick = () => act('dismiss'); $('resolve').onclick = () => act('resolve');
+function show() {
+  const on = !!token;
+  $('login').hidden = on; $('queue').hidden = !on; $('flagged').hidden = !on; $('out').hidden = !on; $('who').textContent = on ? 'Signed in as moderator' : '';
+  if (!on) $('detail').hidden = true;
+  if (on) refresh().catch(e => { $('lerr').textContent = e.message; });
+}
+function signOut() { token = null; sessionStorage.removeItem('sc_tok'); show(); }
+$('out').onclick = signOut;
+$('go').onclick = async () => {
+  $('lerr').textContent = '';
+  try {
+    const r = await fetch('/auth/dev-staff?role=moderator', {method: 'POST', headers: {'X-Admin-Key': $('key').value}});
+    const j = await r.json(); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Sign-in failed');
+    token = j.token; sessionStorage.setItem('sc_tok', token); $('key').value = ''; show();
+  } catch (e) { $('lerr').textContent = e.message; }
+};
+show(); setInterval(() => { if (token) refresh().catch(() => {}); }, 30000);
+</script>
+</body>
+</html>
