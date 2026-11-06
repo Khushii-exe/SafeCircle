@@ -3,9 +3,17 @@ import os
 from dataclasses import dataclass, field
 
 
+def _default_db_url() -> str:
+    if os.getenv("DATABASE_URL"):
+        return os.environ["DATABASE_URL"]
+    if os.getenv("VERCEL"):
+        return "sqlite:////tmp/safecircle.db"
+    return "sqlite:///./safecircle.db"
+
+
 @dataclass
 class Settings:
-    database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./safecircle.db"))
+    database_url: str = field(default_factory=_default_db_url)
     secret_key: str = field(default_factory=lambda: os.getenv("SECRET_KEY", "dev-secret-change-me"))
     admin_key: str = field(default_factory=lambda: os.getenv("ADMIN_KEY", "dev-admin-key"))
     osrm_url: str = field(default_factory=lambda: os.getenv("OSRM_URL", ""))  # e.g. http://osrm:5000 ; empty = demo routes

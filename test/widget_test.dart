@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
@@ -26,6 +28,10 @@ Widget createTestApp(AppState state) {
 }
 
 void main() {
+  setUpAll(() {
+    HttpOverrides.global = TestHttpOverrides();
+  });
+
   setUp(() {
     SharedPreferences.setMockInitialValues({
       'token': 'test-auth-token',

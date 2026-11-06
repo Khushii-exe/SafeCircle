@@ -13,10 +13,16 @@ class SosButton extends StatefulWidget {
 }
 
 class _SosButtonState extends State<SosButton> with SingleTickerProviderStateMixin {
-  late final AnimationController _hold = AnimationController(vsync: this, duration: const Duration(seconds: 3))
-    ..addStatusListener((st) {
-      if (st == AnimationStatus.completed) widget.onFired();
-    });
+  late final AnimationController _hold;
+
+  @override
+  void initState() {
+    super.initState();
+    _hold = AnimationController(vsync: this, duration: const Duration(seconds: 3))
+      ..addStatusListener((st) {
+        if (st == AnimationStatus.completed) widget.onFired();
+      });
+  }
 
   @override
   void dispose() {

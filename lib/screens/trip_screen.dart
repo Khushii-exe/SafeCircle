@@ -26,7 +26,7 @@ class _TripScreenState extends State<TripScreen> with TickerProviderStateMixin {
   int _extendCount = 0;
 
   // Pulse animation for timer when < 30 s
-  late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..repeat(reverse: true);
+  late final AnimationController _pulse;
 
   // Grace-period modal tracking
   bool _graceShowing = false;
@@ -34,6 +34,7 @@ class _TripScreenState extends State<TripScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {});
@@ -55,8 +56,19 @@ class _TripScreenState extends State<TripScreen> with TickerProviderStateMixin {
   void _checkExpiry() {
     final s = context.read<AppState>();
     final t = s.trip;
-    if (t == null || _graceShowing) return;
+    if (t == null) {
+      if (_pulse.isAnimating) _pulse.stop();
+      return;
+    }
     final deadline = parseUtc(t['next_deadline'] as String);
+    final remaining = deadline.difference(DateTime.now().toUtc());
+    final shouldPulse = !remaining.isNegative && remaining.inSeconds <= 30;
+    if (shouldPulse && !_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    } else if (!shouldPulse && _pulse.isAnimating) {
+      _pulse.stop();
+    }
+    if (_graceShowing) return;
     if (DateTime.now().toUtc().isAfter(deadline)) {
       _graceShowing = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _showGraceModal(s));
