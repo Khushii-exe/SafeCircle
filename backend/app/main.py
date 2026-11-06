@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 from fastapi.responses import HTMLResponse
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -261,6 +262,12 @@ def create_app(database_url=None, seed=None):
         task.cancel()
 
     app = FastAPI(title="SafeCircle API", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],       # tighten to your domain before deploying
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.SessionLocal, app.state.notifier = SessionLocal, notifier
     app.include_router(router)
     if seed if seed is not None else (__import__("os").getenv("SEED_DEMO", "1") == "1"):

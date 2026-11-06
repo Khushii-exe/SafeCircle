@@ -178,10 +178,17 @@ def overlays(db):
     for seg in db.scalars(select(Segment)):
         st = db.get(SegmentState, seg.id)
         n, cnt = signal_n(db, seg.id)
+        # Count and timestamp of non-duplicate, non-dismissed reports for provenance display
+        rep_count = db.scalar(select(func.count()).select_from(Report).where(
+            Report.segment_id == seg.id, Report.duplicate.is_(False), Report.dismissed.is_(False))) or 0
+        last_rep = db.scalar(select(func.max(Report.created_at)).where(
+            Report.segment_id == seg.id, Report.duplicate.is_(False), Report.dismissed.is_(False)))
         out.append({"segment_id": seg.id, "name": seg.name, "geom": seg.geom,
                     "concern": st.state if st else "no_data",
                     "signal": None if n is None else ("good" if n <= cfg.n_values["good"] else "weak" if n <= cfg.n_values["weak"] else "none"),
-                    "signal_samples": cnt})  # signal None = not measured (unknown, never 'good')
+                    "signal_samples": cnt,
+                    "report_count": rep_count,
+                    "last_report_at": last_rep.isoformat() if last_rep else None})
     return out
 
 

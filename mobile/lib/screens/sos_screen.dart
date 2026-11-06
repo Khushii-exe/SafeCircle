@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets/glass.dart';
+import '../widgets/sos_button.dart';
 
 class SosScreen extends StatefulWidget {
   const SosScreen({super.key});
@@ -12,28 +13,14 @@ class SosScreen extends StatefulWidget {
   State<SosScreen> createState() => _SosScreenState();
 }
 
-class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMixin {
-  late final AnimationController _hold = AnimationController(vsync: this, duration: const Duration(seconds: 3))
-    ..addStatusListener((st) {
-      if (st == AnimationStatus.completed) _fire();
-    });
+class _SosScreenState extends State<SosScreen> {
   bool sending = false;
   Map<String, dynamic>? result;
   String? failure;
 
-  @override
-  void dispose() {
-    _hold.dispose();
-    super.dispose();
-  }
-
   Future<void> _fire() async {
     if (sending) return;
-    setState(() {
-      sending = true;
-      result = null;
-      failure = null;
-    });
+    setState(() { sending = true; result = null; failure = null; });
     final s = context.read<AppState>();
     try {
       final r = await s.sendSos();
@@ -42,7 +29,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       if (mounted) setState(() => failure = e.toString());
     }
     if (mounted) setState(() => sending = false);
-    _hold.reset();
   }
 
   Future<void> _call112() => launchUrl(Uri(scheme: 'tel', path: '112'));
@@ -64,38 +50,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         const SizedBox(height: 4),
         const Center(child: Text('Hold the button for 3 seconds', style: hSmall)),
         const SizedBox(height: 28),
-        Center(
-          child: Semantics(
-            button: true,
-            label: 'SOS. Press and hold for three seconds to send',
-            onLongPress: _fire,
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: (_) => sending ? null : _hold.forward(from: 0),
-              onPointerUp: (_) {
-                if (_hold.status != AnimationStatus.completed) _hold.reset();
-              },
-              onPointerCancel: (_) => _hold.reset(),
-              child: AnimatedBuilder(
-                animation: _hold,
-                builder: (_, __) => SizedBox(
-                  width: 220,
-                  height: 220,
-                  child: Stack(alignment: Alignment.center, children: [
-                    SizedBox(width: 220, height: 220, child: CircularProgressIndicator(value: _hold.value, strokeWidth: 10, color: C.red, backgroundColor: const Color(0xB3FFFFFF))),
-                    Container(
-                      width: 188,
-                      height: 188,
-                      decoration: BoxDecoration(color: C.red, shape: BoxShape.circle, boxShadow: [BoxShadow(color: C.red.withValues(alpha: 0.25), blurRadius: 0, spreadRadius: 10)]),
-                      alignment: Alignment.center,
-                      child: Text(sending ? '...' : 'SOS', style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)),
-                    ),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-        ),
+        Center(child: SosButton(onFired: sending ? () {} : _fire, size: 220)),
         const SizedBox(height: 28),
         if (result != null)
           Glass(
