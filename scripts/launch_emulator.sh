@@ -25,12 +25,12 @@ else
 fi
 
 echo "Installing latest SafeCircle APK..."
-APK="$DIR/mobile/build/app/outputs/flutter-apk/app-debug.apk"
+APK="$DIR/build/app/outputs/flutter-apk/app-debug.apk"
 if [ -f "$APK" ]; then
     adb install -r "$APK"
     echo "Launching SafeCircle app..."
     adb shell monkey -p com.example.safecircle -c android.intent.category.LAUNCHER 1
     echo "SafeCircle is now running on your emulator window!"
 else
-    echo "APK not found at $APK. Build it with: cd mobile && flutter build apk --debug"
+    echo "APK not found at $APK. Build it with: flutter build apk --debug"
 fi

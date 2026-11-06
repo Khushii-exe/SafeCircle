@@ -116,6 +116,7 @@ class GlassNav extends StatelessWidget {
     (Icons.alt_route, 'Routes'),
     (Icons.verified_user_outlined, 'Trip'),
     (Icons.warning_amber_rounded, 'SOS'),
+    (Icons.bluetooth_searching, 'Nearby'),
   ];
   @override
   Widget build(BuildContext context) => SafeArea(

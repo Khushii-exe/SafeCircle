@@ -18,5 +18,5 @@ if ! curl -s http://127.0.0.1:8000/health > /dev/null 2>&1; then
 fi
 
 echo "Starting Flutter web app in Chrome..."
-cd "$DIR/mobile"
-flutter run -d chrome --dart-define=API_BASE=http://127.0.0.1:8000
+cd "$DIR"
+flutter run -d chrome --dart-define=API_BASE=https://safecircle-backend-dq8z.onrender.com

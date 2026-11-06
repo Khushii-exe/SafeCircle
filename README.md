@@ -1,13 +1,13 @@
 # SafeCircle Flutter app (Android first)
 
 Screens: Map (concern + weak-signal layers), Route comparison (day/night), Report a concern, Journey Guard, SOS.
-Talks to the FastAPI backend in `../backend`.
+Talks to the FastAPI backend (live at `https://safecircle-backend-dq8z.onrender.com` or local in `backend/`).
 
 ## Set up
-1. Install Flutter (3.24+). In an empty folder run `flutter create --platforms=android safecircle`, then copy this project's `lib/`, `pubspec.yaml` and `analysis_options.yaml` over it.
-2. Merge `android_snippets/AndroidManifest_additions.xml` into `android/app/src/main/AndroidManifest.xml`. Set `minSdkVersion 21` or higher.
-3. `flutter pub get`, then start the backend (`SEED_DEMO=1 uvicorn app.main:app --host 0.0.0.0`).
-4. `flutter run` (emulator reaches the host at 10.0.2.2). On a real phone: `flutter run --dart-define=API_BASE=http://<laptop-ip>:8000`.
+1. Install Flutter (3.24+).
+2. `flutter pub get`.
+3. `flutter run` (connects by default to the live Render backend `https://safecircle-backend-dq8z.onrender.com`).
+   - To use a local dev backend: `flutter run --dart-define=API_BASE=http://127.0.0.1:8000` (or `http://10.0.2.2:8000` for Android emulator).
 
 ## Status
 Written against the backend API but NOT yet compiled or run (no Flutter SDK was available when this was generated). Run `flutter analyze` first and fix any version-specific warnings. Known gaps: no route geometry on the map yet (backend returns none in demo mode), offline cache, BLE, real login, Hindi strings, widget tests.

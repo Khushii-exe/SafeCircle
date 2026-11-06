@@ -42,6 +42,7 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   _MapFilter _filter = _MapFilter();
   Map<String, dynamic>? _detail; // segment detail card
+  int _selectedFlag = 0; // 0 = flag A (start), 1 = flag B (end)
 
   List<Polyline> _lines(AppState s, List<Map<String, dynamic>> segs) {
     final out = <Polyline>[];
@@ -67,6 +68,20 @@ class _MapScreenState extends State<MapScreen> {
         if (concern == 'amber') out.add(Polyline(points: pts(seg), strokeWidth: 6, color: C.amber));
         if (concern == 'red') out.add(Polyline(points: pts(seg), strokeWidth: 6, color: C.red));
       }
+      // User-flagged unsafe road stretches
+      for (final stretch in s.flaggedStretches) {
+        out.add(Polyline(points: [stretch.start, stretch.end], strokeWidth: 8, color: const Color(0xFFD32F2F)));
+      }
+    }
+
+    // Active two-flag stretch selection preview
+    if (s.flagMode && s.flagA != null && s.flagB != null) {
+      out.add(Polyline(
+        points: [s.flagA!, s.flagB!],
+        strokeWidth: 8,
+        color: Colors.deepOrangeAccent,
+        pattern: StrokePattern.dashed(segments: const [10, 6]),
+      ));
     }
 
     final sel = s.selectedRoute;
@@ -144,7 +159,19 @@ class _MapScreenState extends State<MapScreen> {
           minZoom: 7,
           maxZoom: 18,
           cameraConstraint: CameraConstraint.containCenter(bounds: regionBounds),
-          onTap: (_, p) { s.setPin(p); setState(() => _detail = null); },
+          onTap: (_, p) {
+            if (s.flagMode) {
+              if (_selectedFlag == 0) {
+                s.setFlagA(p);
+                setState(() => _selectedFlag = 1);
+              } else {
+                s.setFlagB(p);
+              }
+            } else {
+              s.setPin(p);
+              setState(() => _detail = null);
+            }
+          },
         ),
         children: [
           TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'in.safecircle.app'),
@@ -168,6 +195,37 @@ class _MapScreenState extends State<MapScreen> {
             if (s.pin != null)
               Marker(point: s.pin!, width: 44, height: 44, alignment: Alignment.topCenter,
                   child: const Icon(Icons.location_on, color: C.red, size: 44)),
+            // Two Exclamation Flags for marking an unsafe road stretch
+            if (s.flagMode && s.flagA != null)
+              Marker(
+                point: s.flagA!,
+                width: 44,
+                height: 48,
+                alignment: Alignment.topCenter,
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedFlag = 0),
+                  child: _ExclamationFlagWidget(
+                    number: '1',
+                    isSelected: _selectedFlag == 0,
+                    label: 'Flag 1',
+                  ),
+                ),
+              ),
+            if (s.flagMode && s.flagB != null)
+              Marker(
+                point: s.flagB!,
+                width: 44,
+                height: 48,
+                alignment: Alignment.topCenter,
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedFlag = 1),
+                  child: _ExclamationFlagWidget(
+                    number: '2',
+                    isSelected: _selectedFlag == 1,
+                    label: 'Flag 2',
+                  ),
+                ),
+              ),
           ]),
           const RichAttributionWidget(attributions: [TextSourceAttribution('OpenStreetMap contributors')]),
         ],
@@ -218,6 +276,7 @@ class _MapScreenState extends State<MapScreen> {
             Wrap(spacing: 8, runSpacing: 6, children: [
               Pill(s.language == 'en' ? 'Concerns' : 'सुरक्षा समस्याएं', selected: s.showConcern, onTap: s.toggleConcern, dot: C.amber),
               Pill(s.language == 'en' ? 'Weak signal' : 'कमज़ोर सिग्नल', selected: s.showSignal, onTap: s.toggleSignal, dot: C.navy),
+              Pill(s.language == 'en' ? 'Flag Road ⚠️' : 'सड़क फ़्लैग करें ⚠️', selected: s.flagMode, onTap: s.toggleFlagMode, dot: Colors.deepOrangeAccent),
               Pill('Demo: Pin A3', selected: false, onTap: s.setDemoA3Pin, dot: C.red),
             ]),
             const SizedBox(height: 8),
@@ -251,8 +310,20 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
 
-      // ── Segment detail card ──
-      if (_detail != null)
+      // ── Flag mode HUD ──
+      if (s.flagMode)
+        Positioned(
+          left: 16, right: 16, bottom: 104,
+          child: _FlaggingHud(
+            selectedFlag: _selectedFlag,
+            onSelectFlag: (f) => setState(() => _selectedFlag = f),
+            onReport: () => _showFlaggedStretchConcernDialog(context, s),
+            onCancel: () => s.toggleFlagMode(),
+            flagA: s.flagA,
+            flagB: s.flagB,
+          ),
+        )
+      else if (_detail != null)
         Positioned(
           left: 16, right: 16, bottom: 110,
           child: _SegmentCard(seg: _detail!, onClose: () => setState(() => _detail = null)),
@@ -306,6 +377,148 @@ class _MapScreenState extends State<MapScreen> {
     final order = ['all', 'medium', 'high'];
     final next = order[(order.indexOf(_filter.minConf) + 1) % order.length];
     setState(() => _filter = _filter.copyWith(minConf: next));
+  }
+
+  void _showFlaggedStretchConcernDialog(BuildContext context, AppState s) {
+    final selectedConcerns = <String>{'dark'};
+    final noteCtrl = TextEditingController();
+
+    final concernOptions = [
+      ('dark', '🌑 Dark', 'Poor / absent street lighting, pitch dark visibility'),
+      ('animals', '🐕 Animals', 'Aggressive stray dog packs, cattle / wildlife hazards'),
+      ('abandoned', '🏚️ Abandoned', 'Deserted buildings, empty unmonitored plots, no footfall'),
+      ('bad residents', '👥 Bad residents', 'Suspicious gatherings, harassment, anti-social crowds'),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: C.red.withValues(alpha: 0.15), shape: BoxShape.circle),
+                    child: const Icon(Icons.warning_amber_rounded, color: C.red, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Flag Unsafe Road Stretch', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: C.ink)),
+                        Text('Choose all hazards that apply to this road:', style: TextStyle(fontSize: 13, color: C.body)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              for (final opt in concernOptions)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      setModalState(() {
+                        if (selectedConcerns.contains(opt.$1)) {
+                          if (selectedConcerns.length > 1) selectedConcerns.remove(opt.$1);
+                        } else {
+                          selectedConcerns.add(opt.$1);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selectedConcerns.contains(opt.$1) ? C.accent.withValues(alpha: 0.12) : const Color(0xFFF5F6FA),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: selectedConcerns.contains(opt.$1) ? C.accent : Colors.transparent,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selectedConcerns.contains(opt.$1) ? Icons.check_box : Icons.check_box_outline_blank,
+                            color: selectedConcerns.contains(opt.$1) ? C.accent : C.body,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(opt.$2, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: C.ink)),
+                                Text(opt.$3, style: const TextStyle(fontSize: 11, color: C.body)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Additional details / note (optional)…',
+                  hintStyle: const TextStyle(color: C.body, fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFFF5F6FA),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: C.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.shield_outlined, size: 16, color: C.amber),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This concern immediately increases the risk score of routes passing near this stretch.',
+                        style: TextStyle(fontSize: 11, color: C.ink, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              PrimaryButton(
+                'Submit Concern & Update Routes',
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await s.reportFlaggedStretch(selectedConcerns, noteCtrl.text);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Unsafe stretch recorded! Routes dynamically updated.')),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showLegend(BuildContext context) {
@@ -450,4 +663,137 @@ class _LegendRow extends StatelessWidget {
           Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
         ]),
       );
+}
+
+// ── Exclamation Flag Marker Widget ───────────────────────────────────────────
+class _ExclamationFlagWidget extends StatelessWidget {
+  const _ExclamationFlagWidget({
+    required this.number,
+    required this.isSelected,
+    required this.label,
+  });
+
+  final String number;
+  final bool isSelected;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.deepOrange : const Color(0xFFD32F2F),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.priority_high, color: Colors.white, size: 16),
+              Text(
+                'Flag $number',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          width: 3,
+          height: 12,
+          color: Colors.black87,
+        ),
+      ],
+    );
+  }
+}
+
+// ── Flagging HUD ─────────────────────────────────────────────────────────────
+class _FlaggingHud extends StatelessWidget {
+  const _FlaggingHud({
+    required this.selectedFlag,
+    required this.onSelectFlag,
+    required this.onReport,
+    required this.onCancel,
+    required this.flagA,
+    required this.flagB,
+  });
+
+  final int selectedFlag;
+  final ValueChanged<int> onSelectFlag;
+  final VoidCallback onReport;
+  final VoidCallback onCancel;
+  final LatLng? flagA;
+  final LatLng? flagB;
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: 26,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(color: Colors.deepOrange, shape: BoxShape.circle),
+                child: const Icon(Icons.priority_high, color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text('Select Unsafe Road Stretch', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: C.ink)),
+              ),
+              IconButton(icon: const Icon(Icons.close, size: 20), onPressed: onCancel, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Drag or tap map to place Flag 1 (start) and Flag 2 (end) across the eerie or unsafe route.',
+            style: TextStyle(fontSize: 12, color: C.body, height: 1.3),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  label: const Text('❗ Flag 1 (Start)'),
+                  selected: selectedFlag == 0,
+                  onSelected: (_) => onSelectFlag(0),
+                  selectedColor: Colors.deepOrange.withValues(alpha: 0.2),
+                  labelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: selectedFlag == 0 ? Colors.deepOrange : C.body),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Text('❗ Flag 2 (End)'),
+                  selected: selectedFlag == 1,
+                  onSelected: (_) => onSelectFlag(1),
+                  selectedColor: Colors.deepOrange.withValues(alpha: 0.2),
+                  labelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: selectedFlag == 1 ? Colors.deepOrange : C.body),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          PrimaryButton(
+            'Report Concern for this Stretch',
+            onPressed: (flagA != null && flagB != null) ? onReport : null,
+          ),
+        ],
+      ),
+    );
+  }
 }
